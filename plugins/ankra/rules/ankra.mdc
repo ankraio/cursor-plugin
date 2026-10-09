@@ -1,0 +1,20 @@
+---
+description: Use for Kubernetes work on Ankra - clusters, deploying or shipping an application, Helm charts and addons, stacks, GitOps, CI/CD pipelines, ingress, DNS and TLS, secrets, monitoring, security findings, or troubleshooting a failing workload
+alwaysApply: false
+---
+
+# Kubernetes through Ankra
+
+Ankra (https://ankra.ai) manages the Kubernetes clusters this rule applies to. Two ways to reach it:
+
+- **The `ankra` MCP server** this plugin connects (`https://platform.ankra.app/api/v1/mcp`). It signs in through the browser the first time a tool is used, and the token is bound to one Ankra organisation. Start with `list_clusters`; cluster-scoped tools take its `cluster_id`.
+- **The `ankra` CLI**, when installed (`brew install ankraio/tap/ankra`, then `ankra login`). The skills below are written around it.
+
+How to work:
+
+- Read the matching `ankra-*` skill before acting. Start with `ankra-platform-principles`; it routes a request to the right skill.
+- Orient first: `ankra org current` and `ankra cluster info` (or `list_clusters` over MCP) show the organisation and cluster you are acting on. Append `-o json` when parsing CLI output.
+- Cluster state lives in a GitOps repository that Ankra syncs. Do not mutate clusters directly with `kubectl apply/create/edit/delete/patch` or `helm install/upgrade/uninstall`; change the committed cluster or stack YAML (or run `ankra cluster apply`) and let Ankra reconcile.
+- Read-only inspection is encouraged: `ankra cluster get pods|deployments|services|events`, `ankra cluster logs <pod>`, `ankra cluster metrics query '...'`, the MCP read tools, or read-only `kubectl get/describe/logs` against a context from `ankra cluster kubeconfig add --use`.
+- Confirm with the user before anything destructive: deleting a cluster, stack or addon, or scaling to zero.
+- If a cluster is clearly not managed by Ankra, say so and proceed normally for that cluster.

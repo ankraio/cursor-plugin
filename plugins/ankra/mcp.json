@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "ankra": {
+      "url": "https://platform.ankra.app/api/v1/mcp"
+    }
+  }
+}
