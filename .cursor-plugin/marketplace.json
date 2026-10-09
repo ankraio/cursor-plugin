@@ -1,0 +1,18 @@
+{
+  "name": "ankra",
+  "owner": {
+    "name": "Ankra",
+    "email": "hello@ankra.ai"
+  },
+  "metadata": {
+    "description": "Ankra plugins for Cursor",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "ankra",
+      "source": "./plugins/ankra",
+      "description": "Build, ship and operate Kubernetes with Ankra: the hosted Ankra MCP server, agent skills and slash commands"
+    }
+  ]
+}
