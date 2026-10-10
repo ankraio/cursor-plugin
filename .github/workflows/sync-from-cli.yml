@@ -1,0 +1,96 @@
+name: Sync from ankra-cli release
+
+# Keeps the plugin's skills and commands on the latest ankra-cli release.
+# A scheduled check, not a hook in ankra-cli's release workflow: it runs in this
+# repository with its own GITHUB_TOKEN, so no cross-repository token or other
+# long-lived secret exists for it. ankra-cli is public; reading its releases
+# needs no credential.
+#
+# When ankra-cli has a newer stable release than plugins/ankra/SOURCE names,
+# scripts/sync-latest-release.sh downloads that release's binary, verifies its
+# checksum, regenerates the skills and commands, bumps the plugin version and
+# runs the Cursor validator. This job then pushes the result to the bot-owned
+# branch sync/ankra-cli-release and opens (or updates) one pull request to
+# master. A human reviews and merges it; nothing here writes to master.
+
+on:
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "ankra-cli release tag (vX.Y.Z); empty = latest stable release"
+        required: false
+        default: ""
+      dry_run:
+        description: "Sync and validate only; push nothing and open no pull request"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-from-cli
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH: sync/ankra-cli-release
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Sync and validate
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: scripts/sync-latest-release.sh "$TAG"
+
+      - name: Open or update the pull request
+        if: steps.sync.outputs.changed == 'true' && !inputs.dry_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.sync.outputs.tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add plugins/ankra
+          git commit -q -m "chore: sync skills and commands from ankra-cli $TAG"
+          # The branch belongs to this workflow and always carries exactly one
+          # sync commit on top of master, so it is replaced rather than merged.
+          git push --force origin "$BRANCH"
+
+          {
+            echo "Regenerates the skills and commands from ankra-cli [$TAG](https://github.com/ankraio/ankra-cli/releases/tag/$TAG) and bumps the plugin version."
+            echo
+            echo '```'
+            git diff --stat origin/master HEAD
+            echo '```'
+            echo
+            echo "Opened by the scheduled sync ($RUN_URL). The Cursor validator passed in that run."
+            echo "Pull requests opened with GITHUB_TOKEN do not start other workflows, so **Validate** does not run here on its own: close and reopen this pull request to run it."
+          } > "$RUNNER_TEMP/body.md"
+
+          title="chore: sync skills and commands from ankra-cli $TAG"
+          existing="$(gh pr list --head "$BRANCH" --base master --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+            echo "updated #$existing"
+          else
+            gh pr create --base master --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          fi

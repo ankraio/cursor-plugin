@@ -18,6 +18,7 @@ plugins/ankra/
   SOURCE                          the ankra-cli release the skills and commands came from
 scripts/
   sync-from-cli.sh                regenerate skills and commands
+  sync-latest-release.sh          download, verify and sync a release (used by the scheduled workflow)
   validate-template.mjs           Cursor's plugin validator, from cursor/plugin-template
 ```
 
@@ -32,6 +33,13 @@ node scripts/validate-template.mjs
 ```
 
 Bump `version` in `plugins/ankra/.cursor-plugin/plugin.json` when the plugin content changes.
+
+This also runs on its own: the **Sync from ankra-cli release** workflow (`.github/workflows/sync-from-cli.yml`) checks ankra-cli's latest stable release every morning. When it is newer than `plugins/ankra/SOURCE`, `scripts/sync-latest-release.sh` downloads that release's binary, verifies its checksum, regenerates the skills and commands, bumps the minor version and validates, and the workflow opens (or updates) a pull request from `sync/ankra-cli-release`. It uses only the repository's `GITHUB_TOKEN`. Run it by hand from the Actions tab, optionally with a `tag` or as a `dry_run`. The same script works locally without an installed `ankra`:
+
+```bash
+scripts/sync-latest-release.sh            # latest stable release
+scripts/sync-latest-release.sh v0.30.0    # a specific release
+```
 
 ## Testing locally
 

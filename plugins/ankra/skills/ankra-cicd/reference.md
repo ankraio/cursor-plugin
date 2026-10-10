@@ -69,10 +69,13 @@ stages:
     network: "services"                 # protected: the tier that reaches a sidecar
     env:
       ANKRA_CLOUD_TEST_DATABASE_URL: "postgres://postgres:test@postgres:5432/ankra_cloud_test?sslmode=disable"
+      GOCACHE: "/workspace/.ankra-go/cache"      # the root filesystem is read-only
+      GOMODCACHE: "/workspace/.ankra-go/mod"
     cache:                              # protected
-      - key: "go-${{ hashFiles('api/go.sum') }}"
-        paths: ["/root/.cache/go-build", "/root/go/pkg/mod"]
+      - key: "go-${{ hashFiles('api/go.sum') }}"   # hashFiles reads the stage's working_directory (the root here)
+        paths: [".ankra-go/cache", ".ankra-go/mod"]   # workspace-relative, where GOCACHE/GOMODCACHE point
         restore_keys: ["go-"]
+        fallback: none                  # no shared volume on an agent without cache archives
     test_results:
       - format: "go-test"
         path: "api/test-results.json"
@@ -244,6 +247,39 @@ robot — never declare them. `publish` copies the exact digest the gate judged 
 registry as `sha-<7>`; push-to-deploy rolls that tag out (`ankra-ship` §7). A `rerun` does not
 publish (`when.events` excludes it) — push a commit.
 
+What the two stages hand downstream, as `${{ needs.<stage>.outputs.<key> }}`:
+
+| Stage | Output | Value |
+|---|---|---|
+| `build` | `image_ref` | `<staging repository>@sha256:<digest>` — what the scan and the gate judge |
+| `build` | `image_digest`, `image_repository` | the digest, and the staging repository it is in |
+| `publish` | `image_ref` | `<repository>:sha-<7>` in the organisation's or the application's registry — **what a deployment pulls** |
+| `publish` | `image_digest` | the same digest the build reported, so a pin needs no cross-reference |
+| `publish` | `image_tag`, `image_tags` | the `sha-<7>` tag; every tag written, comma-separated, when `publish.tags` adds more |
+
+A stage that pins the release reads them; it does not compose an image name, log in to a registry
+or copy anything:
+
+```yaml
+  - name: "release"
+    kind: "run"
+    needs: ["publish"]
+    when:
+      branches: ["main"]
+      events: ["push"]
+    env:
+      IMAGE_REFERENCE: "${{ needs.publish.outputs.image_ref }}"
+      IMAGE_DIGEST: "${{ needs.publish.outputs.image_digest }}"
+    run: |-
+      ./ci/bump-values.sh "${IMAGE_REFERENCE}" "${IMAGE_DIGEST}"   # commits the pin to the GitOps repository
+```
+
+No `allow_failure` on it: a release that cannot land must fail the run. And no second registry: a
+`run` stage that `crane copy`s the image elsewhere is outside the gate's digest contract, and when
+the target project does not exist a Harbor registry answers `UNAUTHORIZED: project <name> not
+found`, which reads like a credential fault and is not one. Declare a different registry on the
+application instead (`ankra-applications`, "Who mints the push robot").
+
 ## C. Manual GitOps bump — only for a repository Ankra cannot connect
 
 Use this **only** when the repository lives on a provider the organisation has no Git credential or
@@ -349,7 +385,7 @@ string|boolean|number|choice, default, enum, required, description}]}` · `webho
 
 Stage (common): `name` · `kind` · `image` · `run` · `with` · `needs` · `if` · `when {branches,
 paths, events}` · `matrix {<axis>: [...], include, exclude}` (max 64 legs) · `services` · `env` ·
-`secrets` · `cache [{key, paths, size, restore_keys}]` · `artifacts [{name, paths,
+`secrets` · `cache [{key, paths, size, restore_keys, fallback}]` · `artifacts [{name, paths,
 retention_days}]` · `test_results [{format: junit|go-test|pytest|playwright, path}]` · `outputs`
 · `timeout` · `resources {cpu, memory, gpu}` · `runs_on {cluster, node_selector, tolerations,
 runtime_class, arch}` · `network: none|egress-https|services` · `shm_size` · `working_directory`
