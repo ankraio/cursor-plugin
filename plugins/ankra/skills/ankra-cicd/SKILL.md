@@ -57,7 +57,9 @@ Three things must be true before the first run, and none of them errors when fal
 organisation names a CI cluster (`ankra org ci-settings set --cluster <cluster>`), that cluster's
 agent runs pipeline workers (`ankra cluster agent ci set --workers 2 --cluster <cluster>`), and the
 Git credential reaches the repository. A playground cluster has no StorageClass and cannot host CI
-steps. An `unknown command` is an old binary — `ankra upgrade`, never an absent feature.
+steps. More CI capacity than one cluster's quota: list more clusters in the organisation's CI pool
+(`ankra org ci-settings pool add <cluster>`); runs are spread to the least-loaded member and never
+move once started. An `unknown command` is an old binary — `ankra upgrade`, never an absent feature.
 
 ## 2. A bare repository: connect it
 
@@ -134,7 +136,7 @@ stages:
     network: services                # none | egress-https | services — required to reach a sidecar
     env: { DATABASE_URL: "postgres://postgres:test@postgres:5432/app?sslmode=disable" }
     secrets: [database_url]          # must be declared above, else a fatal violation
-    cache: [{ key: "go-${{ hashFiles('go.sum') }}", paths: ["/root/.cache/go-build"], restore_keys: ["go-"] }]
+    cache: [{ key: "go-${{ hashFiles('go.sum') }}", paths: [".ankra-go/cache"], restore_keys: ["go-"], fallback: none }]  # workspace-relative; set GOCACHE=/workspace/.ankra-go/cache in env
     artifacts: [{ name: "coverage", paths: ["coverage.out"], retention_days: 7 }]
     test_results: [{ format: "go-test", path: "test-results.json" }]   # junit | go-test | pytest | playwright
     matrix: { go: ["1.25", "1.26"] }  # cross product of axes (+ include/exclude), GitHub Actions semantics, max 64 legs
@@ -183,6 +185,19 @@ Facts that decide whether the first run works:
   `${{ needs.<stage>.outputs.<key> }}` downstream. Expression roots: `ankra.*` (`ref`, `sha`,
   `repository.*`, `run.number`), `matrix.*`, `inputs.*`, `secrets.*`, `vars.*`, `needs.*`;
   `hashFiles()` and `contains()` work.
+- **The published image is the one you deploy.** `publish` writes `image_ref`
+  (`<repository>:sha-<7>`), `image_digest`, `image_tag` and `image_tags` as outputs; `build` writes
+  `image_ref` (`<repository>@<digest>`, in the staging repository), `image_digest` and
+  `image_repository`. A stage that pins or rolls out the image reads
+  `${{ needs.<publish-stage>.outputs.image_ref }}` and `…outputs.image_digest` - it never rebuilds
+  the name by hand. The registry is the organisation's own Ankra registry, or the one the
+  application declares; Ankra holds the push robot and the pull secret for it. **Never add a `run`
+  stage that copies the image to a second registry** (`crane copy`, `skopeo copy`, `docker push`
+  with a `from: registry` secret): nothing checks that the target project exists, the copy is
+  outside the gate's digest contract, and nothing deploys from it. If the image has to live in a
+  different registry, declare that registry (`ankra application registry set <application-id> --url
+  … --credential … --admin-credential …`, see `ankra-applications`): with an admin credential Ankra
+  creates a missing project or refuses the declaration, instead of every later push failing.
 
 Validate before committing — repository-scoped for a bare repository, from anywhere in the checkout:
 
@@ -340,10 +355,12 @@ with SOPS (`ankra-sops-secrets`).
 | `pipeline_source: generated_workflow` on `ankra application get` | legacy lane | `ankra application pipeline convert <application-id>` |
 | Two builds per commit | a workflow still runs beside the pipeline | delete/disable the workflow; for an application `pipeline convert` switched the generated one off — check for one the repository wrote itself |
 | `Stage "x" has kind "deploy", which has no executor on this build yet` | an unexecuted kind | it is skipped, not failed; do not make the check required; deploy through the application lanes |
-| Step "running" for minutes with no output | pod Pending: CPU quota, no StorageClass, disk | `ankra cluster events -n ankra-ci --type Warning --cluster <cluster>` |
+| Step "running" for minutes with no output | pod Pending: CPU quota, no StorageClass, disk | `ankra pipeline get <run-id>` Queueing says where the wait went ("Pending 5m in the cluster (scheduling 4m30s, volumes 8s, image pull 19s)"); then `ankra cluster events -n ankra-ci --type Warning --cluster <cluster>` |
 | Test cannot reach a private host | `egress-https` is public-only | `ankra org ci-settings set --egress-allowed-cidr <cidr>` |
 | `cargo`/`go mod`/`pnpm install` cannot fetch | `run` stages default to `network: none` | `defaults.network: egress-https` (not protected) |
 | Build exits ~30 s: `[rootlesskit:child] … failed to share mount point: /: permission denied` | the node runtime (containerd AppArmor, kubelet `seccompDefault`) confines the rootless builder | **do not widen the node**; `ankra org ci-settings set --build-fallback platform_builders` (needs `Platform builds enabled: yes` on `ci-settings get`, Ankra's grant) or build on a cluster that does not confine |
+| Step log: `UNAUTHORIZED: project <name> not found`, or a 401 on a manifest lookup, from a Harbor registry whose credential is known good | **the project does not exist.** Harbor answers a missing project as unauthorized to a robot that cannot see it; this is not a credential or scope fault, so rotating the robot changes nothing | a hand-written copy or push stage is aiming at a project nobody created: delete the stage and deploy the `image_ref` that `publish` wrote (§3), or declare the registry with `ankra application registry set … --admin-credential …`, which creates the project or refuses |
+| Run and the `Ankra pipeline` check are **green**, but an image, release or bump never arrived | a stage failed under `allow_failure` (or `continue_on_error`): the run's outcome hides it by design | read the steps, not the run: `ankra pipeline get <run-id> --repository <repository-id>` lists each step's own outcome, `ankra pipeline logs <run-id> --repository <repository-id> --step <stage>` shows why; then remove the flag from every stage whose failure means "not shipped" |
 | `artifact_store_unavailable` | no ready backup vault | `ankra-backups` |
 | `image_gate_blocked` / `no_scan_results` | a finding at or above the gate / scan report never uploaded | fix or disposition in `ankra-security`; never treat `no_scan_results` as clean |
 | Exit 79, "no QEMU emulation registered" | pinned `build.platforms` on an arm64 cluster | drop `build.platforms` |
@@ -372,6 +389,11 @@ get a fix PR (`ankra-ai-gateway`). `ankra application build start <application-i
 - **Repository-scoped commands take `--repository <id>`.** A bare repository has no application.
 - **One check run: `Ankra pipeline`.** Branch protection requires that and nothing else from CI.
 - **Immutable tags, CI updates Git, Ankra deploys.** No cluster credentials in CI, ever.
+- **One registry per image, and it is the one `publish` wrote.** Deploy `publish`'s `image_ref`; a
+  different registry is declared on the application, never reached by a copy script in a `run` stage.
+- **A stage that ships something never carries `allow_failure`.** That flag is for advisory work (a
+  flaky lint, an optional report). On a publish, release or bump stage it turns "not shipped" into a
+  green check that nobody reads.
 
 ## Related skills
 
