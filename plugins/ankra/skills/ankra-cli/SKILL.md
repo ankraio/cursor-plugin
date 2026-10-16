@@ -160,12 +160,34 @@ no write execution running; it knows nothing about your freeze windows, so disab
 one and enable it after. The MCP twins are `get_cluster_agent_status`, `set_cluster_agent_auto_upgrade`
 and `upgrade_cluster_agent`.
 
+## Agent sizing
+
+```bash
+ankra cluster agent resources get                          # memory/CPU limits and requests; "chart default" when unset
+ankra cluster agent resources set --memory-limit 2Gi       # only the flags passed are sent
+ankra cluster agent resources set --memory-limit ""        # clear one member back to the chart default
+```
+
+An agent being OOM-killed needs a bigger memory limit stored here, not a hand-run
+`helm upgrade --set resources.limits.memory=...`: the next agent upgrade renders the hand-set value
+away, while the stored one rides every install and upgrade Ankra generates. The command prints the
+platform's sentence saying whether the agent took the change now, at its next upgrade, or when it
+reconnects.
+
 ## Hosted logs
 
 ```bash
 ankra cluster logs-ship status                   # on/off, platform availability, whether the agent follows it
 ankra cluster logs-ship enable --yes             # opt in: ship every running container's log lines to Ankra (kept 7 days)
 ankra cluster logs-ship disable                  # opt out; no confirmation needed
+```
+
+Ankra restarts a NotReady control plane node through the cloud provider when the other control
+planes are Ready and etcd keeps quorum without it. The switch is per cluster and on by default:
+
+```bash
+ankra cluster control-plane-heal get                    # switch + latest NotReady episode (shadow = recorded only)
+ankra cluster control-plane-heal set --enabled=false    # stop the automatic restart (needs clusters.write)
 ```
 
 Shipping logs to Ankra's hosted log store is opt-in per cluster and off by default; turning it on
