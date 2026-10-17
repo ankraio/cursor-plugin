@@ -244,8 +244,8 @@ stages:
 
 `registry_auth` and `source_token` are reserved bindings Ankra adds from the application's push
 robot — never declare them. `publish` copies the exact digest the gate judged into the application's
-registry as `sha-<7>`; push-to-deploy rolls that tag out (`ankra-ship` §7). A `rerun` does not
-publish (`when.events` excludes it) — push a commit.
+registry as `sha-<7>`; push-to-deploy rolls that tag out (`ankra-ship` §7). A re-run of a push
+publishes again; a re-run of a pull request does not.
 
 What the two stages hand downstream, as `${{ needs.<stage>.outputs.<key> }}`:
 
@@ -375,9 +375,11 @@ Top level: `apiVersion: ankra.io/v1` · `kind: Pipeline` · `metadata.name` (req
 `defaults {image, timeout, resources, cache, working_directory, network, env, secrets}` ·
 `permissions {<scope>: none|read|write}` · `secrets [{name, from, key}]` ·
 `credentials [{name, from: cloud|git|registry|object_storage, as}]` ·
-`services {<name>: {image, env, ports, ready {tcp|http}}}` · `stages` · `on_failure` · `finally`
-(accepted, not yet honoured) · `environments` (pipeline half of a binding; deploy kinds do not
-execute yet).
+`services {<name>: {image, env, ports, ready {tcp|http}}}` · `stages` · `on_failure` (runs only if
+a main stage failed, timed out or hit an infra error; skips are not failures) · `finally` (runs
+whatever the outcome, and after a started run is cancelled: the cancel stops the main and
+`on_failure` stages, runs `finally` within a 15-minute budget, then concludes `cancelled`;
+`ankra pipeline cancel --force` skips or stops it) · `environments` (pipeline half of a binding; deploy kinds do not execute yet).
 
 Triggers: `push {branches, paths}` · `pull_request {branches, paths, fork_policy: none|read_only|trusted}`
 · `tag {patterns}` (glob) · `schedule [{cron, branch, stages}]` · `manual {inputs [{name, type:
