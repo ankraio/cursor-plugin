@@ -144,13 +144,18 @@ ankra cluster access grant <email> --cluster prod --role view|edit|admin|cluster
   [--namespace <ns>] [--expires 30m|4h|7d|<RFC3339>] [--reason "..."]
 ankra cluster access revoke <grant-id|email> --cluster prod
 ankra cluster access elevate --cluster prod --role edit --expires 4h --reason "..."   # break-glass, for yourself only
-ankra org access-policy get                        # creator role, ceiling, elevated lifetime, reason rule
+ankra org access-policy get                        # creator role, ceiling, elevated lifetime, reason rule, pending proposal
+ankra org access-policy set --max-role edit --creator-role view --reason "..."   # PROPOSES; prints the apply link
+ankra org access-policy proposals [--status pending|all] ; ankra org access-policy proposal <id>
 ```
 
 A grant without `--expires` is standing. `elevate` needs only `kube_access.elevate`, always grants
 the caller, and requires `--expires` and `--reason`; run it again to extend, `revoke <grant-id>` to
 end it early. A grant the organisation access policy refuses names the limit and what to pass. The
-policy is read-only from the CLI: an owner or admin changes it in the Ankra UI. See `ankra-security`.
+CLI cannot change the policy: `set` only proposes (needs `kube_access.manage`), prints the before
+and after, the proposal id, its 7-day expiry and an apply link, and an organisation owner or admin
+opens that link signed in and applies it. `--wait` blocks until it is decided (exit 0 applied, 4
+dismissed, 1 expired or superseded, 5 on `--timeout`). See `ankra-security`.
 
 ## Triage
 
@@ -169,15 +174,24 @@ A failed platform execution explains more deploy failures than pod logs do - sta
 
 ```bash
 ankra cluster agent status                       # version, check-in, whether auto-upgrade is on
-ankra cluster agent auto-upgrade disable         # fence this agent off from the fleet rollout (a freeze window)
-ankra cluster agent auto-upgrade enable          # put it back in
-ankra cluster agent upgrade                      # apply the latest release now, whichever way the switch sits
+ankra cluster agent auto-upgrade disable --reason "freeze window"   # fence this agent off from the fleet rollout
+ankra cluster agent auto-upgrade enable --reason "freeze over"      # put it back in
+ankra cluster agent upgrade                      # apply a release now, whichever way the switch sits
+ankra cluster agent upgrade --version 2.1.1250   # install exactly that published release
+ankra cluster agent upgrade --version 2.1.1247 --allow-downgrade   # roll back on purpose
 ```
 
 The fleet rollout upgrades every online agent that has not opted out, as soon as the cluster has
 no write execution running; it knows nothing about your freeze windows, so disable it ahead of
-one and enable it after. The MCP twins are `get_cluster_agent_status`, `set_cluster_agent_auto_upgrade`
-and `upgrade_cluster_agent`.
+one and enable it after. Each switch is recorded in the audit log (`set_agent_auto_upgrade`, with the
+previous value and your `--reason`), so say why. The MCP twins are `get_cluster_agent_status`, `set_cluster_agent_auto_upgrade`
+and `upgrade_cluster_agent` (which takes the same `version` / `allow_downgrade`).
+
+`agent upgrade` without `--version` installs the newer of the release the agent runs and the latest
+stable one, so it never moves an agent backwards (a release candidate is re-rendered where it is).
+A `--version` older than the running release is refused (exit 2) unless `--allow-downgrade` is also
+given, and a release that is neither published nor running is refused the same way: a downgrade
+only happens when both flags say so.
 
 ## Agent sizing
 
