@@ -68,6 +68,7 @@ Rules that matter more than convenience:
 | Secret only this application needs, same in every environment | Application environment secret (sealed into **every** deployment of the application) | `ankra application env-secrets set` |
 | Secret that differs per environment (a test and a live payment key) | SOPS-encrypted Secret manifest in each cluster's Stack | `ankra cluster encrypt manifest` |
 | Secret a stack deploys (a Secret manifest, an addon value) | SOPS-encrypted in the GitOps repo, with `encrypted_paths` | `ankra cluster encrypt manifest` / `... addon` |
+| Secret nobody should see or type (a generated database password, a token an agent wires up) | Organisation secret slot; the stack carries its `${SECRET_SLOT:<id>}` sentinel at a declared `encrypted_paths` key | `ankra secrets create <name> --generate` |
 | Non-secret, differs per cluster (base URLs, sizes, model names) | Cluster variable | `ankra cluster variables set` |
 | Non-secret, same across the organisation | Organisation variable | `ankra org variables set` |
 | Non-secret, differs per stack instance | Stack variable | `ankra cluster stacks variables set` |
@@ -192,10 +193,18 @@ SeaweedFS S3, VictoriaLogs, VictoriaMetrics) answer only inside their cluster, a
 `<name>.<service>.svc.cluster.local` with credentials in a Secret in the service's namespace
 (`postgresql-app` with `fqdn-uri` for PostgreSQL). `ankra services list|get <service>` shows them,
 `ankra services consumers bind --application <app> --cluster <cluster> --namespace <ns>` records
-the consumer (it deploys nothing and delivers no credential). Ankra does not deliver the
-credentials into the application yet: read the value with `--reveal` above and set it as an
-env-secret (the service page's **Use it in <application>** opens that form), then `apply`. Use the
-`fqdn-` keys from another namespace; wait for the service's **Readiness: Ready** before relying on it.
+the consumer (it deploys nothing). An application on the **service's own cluster** receives the
+connection once the service is running, without a redeploy while none of its running pods reads it
+(otherwise Ankra leaves it to its next deploy, which rolls those pods together): a `<service>-connection` Secret in its
+namespace, read through `envFrom` as `DATABASE_URL`/`PG*`, `REDIS_URL`, `NATS_URL`, `OPENSEARCH_*`,
+`S3_ENDPOINT`/`AWS_*` or `VICTORIA_*_URL` (the first service of a kind gets these names, every
+service also `<SERVICE_NAME>_`-prefixed ones). Do not also set those names as env-secrets: two
+sources for one variable is a bug. `ankra services get <service>` shows each consumer's delivery
+(delivered, pending, unsupported, unknown) and its pickup (`waiting_for_service`, `delivering`,
+`holder_gone`, `redeploy_needed`, `restart_needed`, `in_use`), which says what is left to do. Only an application on **another
+cluster** is wired by hand: read the value with `--reveal` above, set it as an env-secret, `apply`,
+and give it an address your own network path exposes. Wait for **Readiness: Ready** before relying
+on the service.
 
 ## Pattern: an internal API or third-party SaaS
 
