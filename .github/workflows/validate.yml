@@ -20,6 +20,18 @@ jobs:
         run: node scripts/validate-template.mjs
       - name: Check JSON manifests
         run: |
-          for file in .cursor-plugin/marketplace.json plugins/*/.cursor-plugin/plugin.json plugins/*/mcp.json; do
+          for file in .cursor-plugin/marketplace.json plugins/*/.cursor-plugin/plugin.json plugins/*/mcp.json \
+            .claude-plugin/marketplace.json plugins/*/.claude-plugin/plugin.json plugins/*/.mcp.json; do
             node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$file"
+          done
+      - name: Cursor and Claude Code manifests carry one version
+        run: |
+          for plugin in plugins/*; do
+            node -e '
+            const fs = require("fs");
+            const read = (client) => JSON.parse(fs.readFileSync(`${process.argv[1]}/.${client}-plugin/plugin.json`, "utf8")).version;
+            if (read("cursor") !== read("claude")) {
+              console.error(`${process.argv[1]}: cursor ${read("cursor")} differs from claude ${read("claude")}`);
+              process.exit(1);
+            }' "$plugin"
           done
