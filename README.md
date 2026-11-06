@@ -2,10 +2,10 @@
 
 The [Ankra](https://ankra.ai) plugin for [Cursor](https://cursor.com/marketplace) and [Claude Code](https://code.claude.com). It connects the agent to the hosted Ankra MCP server and adds Ankra's agent skills and slash commands for building, shipping and operating Kubernetes through Ankra.
 
-In Claude Code:
+For Claude Code, run this in a terminal:
 
-```text
-/plugin install ankra --marketplace ankraio/cursor-plugin
+```sh
+claude plugin install ankra --marketplace ankraio/cursor-plugin
 ```
 
 Using the plugin: see [plugins/ankra/README.md](plugins/ankra/README.md).

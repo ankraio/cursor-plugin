@@ -12,13 +12,13 @@ You need an Ankra account. Sign up at [ankra.ai](https://ankra.ai).
 
 ## Setup in Claude Code
 
-1. Install the plugin:
+1. Install the plugin from a terminal:
 
-   ```text
-   /plugin install ankra --marketplace ankraio/cursor-plugin
+   ```sh
+   claude plugin install ankra --marketplace ankraio/cursor-plugin
    ```
 
-2. Run `/mcp`, pick `ankra` and choose **Authenticate**. Sign in to Ankra in the browser and pick the organisation the agent should work in.
+2. Start `claude`, run `/mcp`, pick `ankra` and choose **Authenticate**. Sign in to Ankra in the browser and pick the organisation the agent should work in.
 3. Optional, recommended: install the Ankra CLI, as in the Cursor steps below.
 
 Ask the agent "which Ankra clusters do I have?" to check the connection. In Claude Code the slash commands below carry the plugin's prefix, for example `/ankra:ankra-triage`.
