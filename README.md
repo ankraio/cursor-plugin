@@ -1,17 +1,26 @@
-# Ankra plugin for Cursor
+# Ankra plugin for Cursor and Claude Code
 
-The [Ankra](https://ankra.ai) plugin for the [Cursor Marketplace](https://cursor.com/marketplace). It connects the Cursor agent to the hosted Ankra MCP server and adds Ankra's agent skills, a rule and slash commands for building, shipping and operating Kubernetes through Ankra.
+The [Ankra](https://ankra.ai) plugin for [Cursor](https://cursor.com/marketplace) and [Claude Code](https://code.claude.com). It connects the agent to the hosted Ankra MCP server and adds Ankra's agent skills and slash commands for building, shipping and operating Kubernetes through Ankra.
+
+In Claude Code:
+
+```text
+/plugin install ankra --marketplace ankraio/cursor-plugin
+```
 
 Using the plugin: see [plugins/ankra/README.md](plugins/ankra/README.md).
 
 ## Layout
 
 ```text
-.cursor-plugin/marketplace.json   marketplace manifest
+.cursor-plugin/marketplace.json   Cursor marketplace manifest
+.claude-plugin/marketplace.json   Claude Code marketplace manifest
 plugins/ankra/
-  .cursor-plugin/plugin.json      plugin manifest
-  mcp.json                        the hosted Ankra MCP server (browser sign-in)
-  rules/ankra.mdc                 when and how to work through Ankra
+  .cursor-plugin/plugin.json      Cursor plugin manifest
+  .claude-plugin/plugin.json      Claude Code plugin manifest
+  mcp.json                        the hosted Ankra MCP server for Cursor (browser sign-in)
+  .mcp.json                       the same server for Claude Code
+  rules/ankra.mdc                 when and how to work through Ankra (Cursor only)
   skills/                         generated from ankra-cli, do not edit here
   commands/                       generated from ankra-cli, do not edit here
   assets/logo.svg
@@ -32,7 +41,7 @@ scripts/sync-from-cli.sh      # defaults to the installed CLI's version
 node scripts/validate-template.mjs
 ```
 
-Bump `version` in `plugins/ankra/.cursor-plugin/plugin.json` when the plugin content changes.
+Bump `version` in `plugins/ankra/.cursor-plugin/plugin.json` and `plugins/ankra/.claude-plugin/plugin.json` when the plugin content changes. The two stay equal; CI checks it. Claude Code users stay on a version until it changes, so a content change without a bump never reaches them.
 
 This also runs on its own: the **Sync from ankra-cli release** workflow (`.github/workflows/sync-from-cli.yml`) checks ankra-cli's latest stable release every morning. When it is newer than `plugins/ankra/SOURCE`, `scripts/sync-latest-release.sh` downloads that release's binary, verifies its checksum, regenerates the skills and commands, bumps the minor version and validates, and the workflow opens (or updates) a pull request from `sync/ankra-cli-release`. It uses only the repository's `GITHUB_TOKEN`. Run it by hand from the Actions tab, optionally with a `tag` or as a `dry_run`. The same script works locally without an installed `ankra`:
 
@@ -42,6 +51,16 @@ scripts/sync-latest-release.sh v0.30.0    # a specific release
 ```
 
 ## Testing locally
+
+Claude Code:
+
+```bash
+claude plugin validate --strict plugins/ankra
+claude plugin validate .
+claude --plugin-dir plugins/ankra
+```
+
+Cursor:
 
 ```bash
 mkdir -p ~/.cursor/plugins/local

@@ -1,0 +1,31 @@
+{
+  "name": "ankra",
+  "displayName": "Ankra",
+  "version": "0.7.0",
+  "description": "Build, ship and operate Kubernetes with Ankra. Connects the hosted Ankra MCP server and adds agent skills for clusters, stacks and Helm addons, GitOps, CI/CD, secrets, observability, security and troubleshooting, plus slash commands to stand up a cluster, ship a service and triage a failure.",
+  "author": {
+    "name": "Ankra",
+    "email": "hello@ankra.ai",
+    "url": "https://ankra.ai"
+  },
+  "homepage": "https://ankra.ai",
+  "repository": "https://github.com/ankraio/cursor-plugin",
+  "license": "Apache-2.0",
+  "keywords": [
+    "ankra",
+    "kubernetes",
+    "k8s",
+    "helm",
+    "gitops",
+    "devops",
+    "platform-engineering",
+    "ci-cd",
+    "observability",
+    "mcp"
+  ],
+  "icon": "./assets/logo.svg",
+  "documentationUrl": "https://docs.ankra.ai/integrations/agent-skills",
+  "supportUrl": "https://github.com/ankraio/cursor-plugin/issues",
+  "privacyPolicyUrl": "https://ankra.ai/privacy",
+  "termsOfServiceUrl": "https://ankra.ai/terms"
+}

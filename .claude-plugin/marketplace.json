@@ -1,0 +1,23 @@
+{
+  "name": "ankra",
+  "description": "Ankra plugins for Claude Code",
+  "owner": {
+    "name": "Ankra",
+    "email": "hello@ankra.ai"
+  },
+  "plugins": [
+    {
+      "name": "ankra",
+      "source": "./plugins/ankra",
+      "description": "Build, ship and operate Kubernetes with Ankra: the hosted Ankra MCP server, agent skills and slash commands",
+      "relevance": {
+        "topic": "Kubernetes on Ankra",
+        "signals": {
+          "cli": ["ankra"],
+          "hosts": ["platform.ankra.app"],
+          "filesRead": ["**/.ankra/**"]
+        }
+      }
+    }
+  ]
+}

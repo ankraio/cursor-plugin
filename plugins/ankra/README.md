@@ -1,8 +1,8 @@
-# Ankra for Cursor
+# Ankra for Cursor and Claude Code
 
-Build, ship and operate Kubernetes with [Ankra](https://ankra.ai) from Cursor.
+Build, ship and operate Kubernetes with [Ankra](https://ankra.ai) from Cursor or Claude Code.
 
-The plugin gives the Cursor agent three things:
+The plugin gives the agent three things:
 
 - **The Ankra MCP server.** Live access to your clusters, workloads, logs, metrics, alerts, stacks, applications and pipelines, plus the actions your token allows.
 - **Agent skills.** Ankra's own guidance for clusters, stacks and Helm addons, GitOps, CI/CD, secrets, DNS and TLS, observability, security and troubleshooting. The agent loads the one that matches the task.
@@ -10,7 +10,20 @@ The plugin gives the Cursor agent three things:
 
 You need an Ankra account. Sign up at [ankra.ai](https://ankra.ai).
 
-## Setup
+## Setup in Claude Code
+
+1. Install the plugin:
+
+   ```text
+   /plugin install ankra --marketplace ankraio/cursor-plugin
+   ```
+
+2. Run `/mcp`, pick `ankra` and choose **Authenticate**. Sign in to Ankra in the browser and pick the organisation the agent should work in.
+3. Optional, recommended: install the Ankra CLI, as in the Cursor steps below.
+
+Ask the agent "which Ankra clusters do I have?" to check the connection. In Claude Code the slash commands below carry the plugin's prefix, for example `/ankra:ankra-triage`.
+
+## Setup in Cursor
 
 1. Install the plugin from the Cursor Marketplace.
 2. The first time the `ankra` MCP server connects, Cursor opens a browser window. Sign in to Ankra and pick the organisation the agent should work in. If the server shows as off, turn it on under **Cursor Settings > MCP**.

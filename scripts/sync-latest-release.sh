@@ -71,16 +71,21 @@ chmod +x "$bin/ankra"
 
 PATH="$bin:$PATH" "$root/scripts/sync-from-cli.sh" "$tag"
 
-# Every content sync is a new plugin release: bump the minor version.
+# Every content sync is a new plugin release: bump the minor version in both
+# manifests. Claude Code keeps users on a version until it changes, so a sync
+# that bumped only the Cursor manifest would never reach them.
 node -e '
 const fs = require("fs");
-const file = process.argv[1];
-const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
-const [major, minor] = manifest.version.split(".").map(Number);
-manifest.version = `${major}.${minor + 1}.0`;
-fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + "\n");
-console.log(`plugin version ${manifest.version}`);
-' "$plugin/.cursor-plugin/plugin.json"
+const files = process.argv.slice(1);
+const manifests = files.map((file) => JSON.parse(fs.readFileSync(file, "utf8")));
+const [major, minor] = manifests[0].version.split(".").map(Number);
+const version = `${major}.${minor + 1}.0`;
+files.forEach((file, index) => {
+  manifests[index].version = version;
+  fs.writeFileSync(file, JSON.stringify(manifests[index], null, 2) + "\n");
+});
+console.log(`plugin version ${version}`);
+' "$plugin/.cursor-plugin/plugin.json" "$plugin/.claude-plugin/plugin.json"
 
 (cd "$root" && node scripts/validate-template.mjs)
 output changed true
