@@ -94,6 +94,29 @@ ankra cluster manifests upgrade <name>
 cluster these CLI changes are committed back to the repository; prefer editing the file in a pull
 request so the change is reviewed.
 
+## Re-running a stack
+
+`ankra cluster stacks redeploy <stack>` re-runs the deployment jobs of the members a redeploy
+picks, and lists what it started and what it skipped. `--force` is only for a manifest whose
+apply failed with `conflict with "<manager>"`: it overwrites those fields on the live objects for
+that one redeploy, cannot be undone, asks for confirmation (`--yes` without a terminal), and
+needs `clusters.write` on top of `stacks.deploy`. See
+`ankra-troubleshooting` before reaching for it.
+
+## Taking a stack off the cluster and back
+
+`ankra cluster stacks uninstall <stack> --cluster <cluster>` takes every add-on, manifest and
+application in the stack off the cluster while the stack stays declared in Ankra and in Git;
+`ankra cluster stacks install <stack> --cluster <cluster>` deploys it again with what it declares now. Uninstall is
+not a pause: data goes exactly as a delete treats it (what a chart or operator removes with its
+workload is gone, and install does not bring it back), so back the stack up first (see
+`ankra-backups`). Both name the cluster with `--cluster` and never use the shared
+`ankra cluster select`. Uninstall needs `stacks.delete` and asks first (`--yes` without a
+terminal); install needs `stacks.deploy`. A refusal (offline cluster,
+open draft, a member still deploying, an uninstall still running) changes nothing and exits 8
+with the platform's reason. To remove a stack from Git as well, `ankra cluster stacks delete` is
+the verb instead.
+
 ## One stack, many clusters
 
 The moment a stack would be copy-pasted to a second cluster and edited, stop and capture it as a

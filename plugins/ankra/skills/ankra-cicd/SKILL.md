@@ -162,10 +162,11 @@ stages:
 ```
 
 Stage kinds (closed vocabulary; an unknown kind is fatal): `checkout`, `run`, `build`, `scan`,
-`gate`, `publish`, `deploy` **execute today**; `preview`, `verify`, `agent`, `approval`, `webhook`,
-`automation`, `ankra`, `external` validate with a warning and are skipped as `kind_unavailable`.
-`deploy` releases a signed bundle to host targets outside Kubernetes (`ankra targets`), never to a
-cluster.
+`gate`, `publish`, `deploy`, `environment` **execute today**; `preview`, `verify`, `agent`,
+`approval`, `webhook`, `automation`, `ankra`, `external` validate with a warning and are skipped as
+`kind_unavailable`. `deploy` releases a signed bundle to host targets outside Kubernetes
+(`ankra targets`), never to a cluster. `environment` tests the run's build on ephemeral clusters
+(section 7b).
 `run` is the open kind — any image the organisation's policy permits, any script — so a kind is never
 needed to express custom work. `uses:` is refused; write the step as `run:`.
 
@@ -268,7 +269,8 @@ that will never post again.
 Ankra's rule is **logic is open, authority is closed.** Anyone may change what a stage *runs* on any
 branch; the *protected sections* — `permissions`, `secrets`, `credentials`, `on.pull_request.fork_policy`,
 the `services` catalog, `defaults.network` above `egress-https`, and per stage: `network: services`,
-`runs_on`, `resources`, `timeout`, `cache`, `with`, gate/approval roles, `publish.promote_from`, `kind: external`, agent
+`runs_on` (`cluster`, `node_selector`, `tolerations`, `runtime_class`; not `arch`, a build target a pull
+request may change), `resources`, `timeout`, `cache`, `with`, gate/approval roles, `publish.promote_from`, `kind: external`, agent
 mode — come only from the **default-branch definition an administrator approved**. This is what stops
 a pull request from granting itself a credential or moving its own pod onto a privileged node pool.
 
@@ -294,6 +296,13 @@ ankra pipeline get <run-id> --repository <repository-id>     # Authority: unappr
 ankra pipeline get <run-id> --repository <repository-id> -o json | jq -r .approve_definition_id
 ankra pipeline definitions get <definition-id>               # inspect what would be granted, and the approval state
 ankra pipeline definitions approve <definition-id>           # HUMAN admin: pipelines.manage + human actor; confirms; --yes to skip
+ankra pipeline authority list                                # the approvals inbox: pending requests runs raised (--status, --application)
+ankra pipeline authority get <request-id>                    # what it asks for against the approved authority, and its approve command
+ankra pipeline authority dismiss <request-id> --reason "..."  # HUMAN admin declines it; the run's check shows the reason
+ankra pipeline policy get                                    # the organisation's ceiling: network tiers, credentials, max CPU/memory/cache
+ankra pipeline policy set --max-cache-size 20Gi              # pipelines.manage; confirms; node selectors and tolerations via -f
+ankra pipeline caches --application <name>                   # the cache volumes kept between runs, and when each lapses
+ankra pipeline workspace-profiles get --application <name>   # what `ankra dev` workspaces run; `put -f` replaces them
 ```
 
 Facts: only the repository's **current default-branch** definition can be approved, and only once —
@@ -433,6 +442,37 @@ run it inside the checkout for `affected:` stages. `ankra pipeline get <run-id>`
 saved** per skipped or promoted stage. For local test and lint loops, `ankra exec -- <command>` runs
 in a warm Ankra Workspace on the CI pool and `ankra dev install` routes heavy commands there.
 
+Test against real clusters with a stage of `kind: environment`: for each leg of its `matrix` (for
+example `kubernetes: ["1.35", "1.36", "1.37"]` x `postgres: ["16", "17"]`) Ankra builds an ephemeral
+Ankra Cloud cluster in the organisation, deploys the build under test, runs the tests, records the
+result and tears the cluster down when the leg ends, whatever the result (`teardown: always`, the
+default; `teardown: on_success` keeps a failed leg's cluster for debugging until its lifetime ends). A `publish` that needs the stage waits for every leg.
+
+```yaml
+  - name: test-matrix
+    kind: environment
+    needs: [build]
+    matrix: { kubernetes: ["1.35", "1.36", "1.37"], postgres: ["16", "17"] }
+    test_environment:
+      kubernetes: "${{ matrix.kubernetes }}"
+      services: [{ postgres: "${{ matrix.postgres }}" }]
+      deploy: build-under-test        # or { artifact: <build|publish stage>, port: 8080, env: {...} }
+      test: { image: golang:1.26, run: "go test ./e2e/...", timeout: "30m" }
+      # plan (smallest by default), zone, teardown: always|on_success, max_lifetime: 2h (max 6h)
+```
+
+The tests get `ANKRA_TEST_ENVIRONMENT_URL`, `ANKRA_KUBERNETES_VERSION`, and with a PostgreSQL
+service `DATABASE_URL` and `ANKRA_POSTGRES_VERSION`. Limits: six live environment clusters per
+organisation (legs beyond the cap wait as `queued`), a 2h default and 6h maximum lifetime enforced by
+a reaper even when the run dies, one PostgreSQL service (14-18) per leg. `test_environment` is a
+protected section: the clusters are billed to the organisation, so nothing is built until an
+administrator approves the definition (`ankra pipeline definitions approve <id>`), and a fork's
+head never builds one. `ankra pipeline environments <run-id>` (alias `envs`) prints the legs as a
+grid with a one-line verdict and each failed leg's message and last log lines (`--logs` for the
+whole tail, `-o json` for the platform's answer);
+`ankra pipeline get <run-id>` and `ankra pipeline tests <run-id>` print the same grid under "Test
+environments".
+
 ## 8. Troubleshooting
 
 | Symptom | Cause | Do |
@@ -454,7 +494,7 @@ in a warm Ankra Workspace on the CI pool and `ankra dev install` routes heavy co
 | Step "running" for minutes with no output | pod Pending: CPU quota, no StorageClass, disk | `ankra pipeline get <run-id>` Queueing says where the wait went ("Pending 5m in the cluster (scheduling 4m30s, volumes 8s, image pull 19s)"); then `ankra cluster events -n ankra-ci --type Warning --cluster <cluster>` |
 | Test cannot reach a private host | `egress-https` is public-only | `ankra org ci-settings set --egress-allowed-cidr <cidr>` |
 | `cargo`/`go mod`/`pnpm install` cannot fetch | `run` stages default to `network: none` | `defaults.network: egress-https` (not protected) |
-| Build exits ~30 s: `[rootlesskit:child] … failed to share mount point: /: permission denied` | the node runtime (containerd AppArmor, kubelet `seccompDefault`) confines the rootless builder | **do not widen the node**; `ankra org ci-settings set --build-fallback platform_builders` (needs `Platform builds enabled: yes` on `ci-settings get`, Ankra's grant) or build on a cluster that does not confine |
+| Build exits ~30 s: `[rootlesskit:child] … failed to share mount point: /: permission denied` | the node runtime (containerd AppArmor, kubelet `seccompDefault`) confines the rootless builder | **do not widen the node**; when containerd AppArmor confines it, `ankra cluster agent ci set --build-apparmor-profile ankra-managed --cluster <cluster>` lets the agent ship and load Ankra's profile on the nodes and keep builds where it is loaded (needs `Managed AppArmor: advertised` on `ankra cluster agent ci get`, which also shows `Profile loaded on: M of N nodes` and why a node lacks it; `''` turns it off; any other name is a profile you installed on every node yourself); otherwise `ankra org ci-settings set --build-fallback platform_builders` (needs `Platform builds enabled: yes` on `ci-settings get`, Ankra's grant) or build on a cluster that does not confine |
 | Step log: `UNAUTHORIZED: project <name> not found`, or a 401 on a manifest lookup, from a Harbor registry whose credential is known good | **the project does not exist.** Harbor answers a missing project as unauthorized to a robot that cannot see it; this is not a credential or scope fault, so rotating the robot changes nothing | a hand-written copy or push stage is aiming at a project nobody created: delete the stage and deploy the `image_ref` that `publish` wrote (§3), or declare the registry with `ankra application registry set … --admin-credential …`, which creates the project or refuses |
 | Run and the `Ankra pipeline` check are **green**, but an image, release or bump never arrived | a stage failed under `allow_failure` (or `continue_on_error`): the run's outcome hides it by design | read the steps, not the run: `ankra pipeline get <run-id> --repository <repository-id>` lists each step's own outcome, `ankra pipeline logs <run-id> --repository <repository-id> --step <stage>` shows why; then remove the flag from every stage whose failure means "not shipped" |
 | A stage skipped as `path_filter` / `not_affected` that should have run | filters too narrow, or the stage must never skip | `ankra pipeline rerun <run-id> --full`; widen `paths:`; or list it in `ci_always_run_stages` |
@@ -463,6 +503,8 @@ in a warm Ankra Workspace on the CI pool and `ankra dev install` routes heavy co
 | `artifact_store_unavailable` | no ready backup vault | `ankra-backups` |
 | `image_gate_blocked` / `no_scan_results` | a finding at or above the gate / scan report never uploaded | fix or disposition in `ankra-security`; never treat `no_scan_results` as clean |
 | Exit 79, "no QEMU emulation registered" | pinned `build.platforms` on an arm64 cluster | drop `build.platforms` |
+| Step `infra_error`: `ErrImagePull: no matching manifest for linux/arm64/v8 in the manifest list entries` | the stage's `image` has no build for the CI cluster's architecture (an amd64-only image on an arm64 cluster, such as an Apple-silicon OrbStack one) | use a multi-arch image, or run the repository on a cluster whose nodes match: `ankra pipeline repositories set-cluster <repository-id> --cluster <cluster>` |
+| Step fails "the step can never be scheduled on this cluster: no node in the cluster matches the step's node selector", the stage sets `runs_on.arch` (or a `kubernetes.io/arch` node selector) | no node of that architecture in the cluster | drop `runs_on.arch`, or run on a cluster that has such nodes (`ankra pipeline repositories set-cluster`) |
 | `unknown command "pipeline"` | old CLI | `ankra --version`, `ankra upgrade` |
 | GitHub Actions: "The job was not started because an Actions budget is preventing further use" | GitHub's budget — irrelevant to Ankra | move the repository to Ankra Pipelines (decision table); do not treat it as billing |
 
